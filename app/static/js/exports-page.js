@@ -1,0 +1,1 @@
+exportUnexported.onclick=async()=>{const r=await fetch('/api/exports',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF_TOKEN},body:JSON.stringify({mode:'unexported'})});const d=await r.json();if(!r.ok)return alert(d.detail);location.href=`/api/exports/${d.id}/download`;setTimeout(()=>location.reload(),800)};
