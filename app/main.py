@@ -2,10 +2,10 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Depends
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 from app.api import auth,batches,scans,data,exports
@@ -33,7 +33,13 @@ async def security(request:Request,call_next):
 for r in (auth.router,batches.router,scans.router,data.router,exports.router): app.include_router(r)
 def ctx(request,**extra): return {'csrf_token':ensure_csrf_token(request),'request':request,**extra}
 @app.get('/healthz')
-def healthz(): return {'status':'ok'}
+def healthz():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text('SELECT 1'))
+    except Exception:
+        return JSONResponse({'status':'error','database':'unavailable'},status_code=503)
+    return {'status':'ok','database':'ok'}
 @app.get('/')
 def root(request:Request): return RedirectResponse('/dashboard' if request.session.get('is_admin') else '/login',303)
 @app.get('/dashboard')
