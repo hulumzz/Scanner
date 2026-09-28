@@ -1,1 +1,14 @@
-{% extends 'base.html' %}{% block content %}<header><div><small>BATCH DETAIL</small><h1>{{ batch.batch_code }}</h1><p>{{ batch.items|length }} dokumen</p></div></header><section class="grid">{% for item in batch.items|sort(attribute='item_number') %}<a class="scan-card" href="/scans/{{ item.id }}"><div class="thumb">{% if item.thumbnail_data %}<img src="/api/scan-items/{{ item.id }}/thumbnail">{% else %}KK{% endif %}</div><div><small>KK-{{ '%03d'|format(item.item_number) }}</small><b>{{ item.original_filename }}</b><span class="badge">{{ item.status }}</span>{% if item.failure_message %}<p>{{ item.failure_message }}</p>{% endif %}</div></a>{% endfor %}</section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<header><div><small>HASIL</small><h1>{{ batch.batch_code }}</h1><p id="batchSubtitle">{{ batch.items|length }} dokumen</p></div><a class="btn" href="/scan">Impor KK</a></header>
+<section class="stats batch-stats" id="batchSummary"></section>
+<section class="card batch-actions">
+  <div><h2>Tindakan</h2><p id="batchActionHint"></p></div>
+  <div class="button-row"><a class="btn" id="reviewNext" href="#">Buka berikutnya</a><button class="primary" id="approveExtracted" type="button">Setujui semua yang valid</button><a class="btn" href="/exports">Excel</a></div>
+</section>
+<section class="card">
+  <div class="row batch-filter-row"><h2>Dokumen</h2><div class="filter-tabs" id="batchFilters"><button class="active" data-filter="">Semua</button><button data-filter="EXTRACTED">Siap disetujui</button><button data-filter="REVIEW_REQUIRED">Perlu review</button><button data-filter="FAILED">Gagal</button><button data-filter="APPROVED">Approved</button></div></div>
+  <div class="batch-list" id="batchList" data-batch-id="{{ batch.id }}"></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/batch-detail.js"></script>{% endblock %}

@@ -1,43 +1,36 @@
 # Standalone KK Scanner V1
 
-Aplikasi web mandiri untuk membaca foto/scan Kartu Keluarga Indonesia, menyimpan hasil ekstraksi ke database scanner terpisah, memungkinkan review/koreksi manual, batch scanning, dan export XLSX 28 kolom yang kompatibel dengan Import Kependudukan SID Desa Lambanggelun.
+Aplikasi web mandiri untuk membaca PDF Kartu Keluarga Indonesia dengan teks selectable, menyimpan hasil ekstraksi ke database scanner terpisah, memungkinkan review/koreksi manual, batch scanning, dan export XLSX 28 kolom yang kompatibel dengan Import Kependudukan SID Desa Lambanggelun.
 
 > V1 tidak terhubung langsung ke database SID. AI tidak pernah membuat data otomatis menjadi `APPROVED`.
 
 ## Arsitektur
 
 ```text
-Browser (resize/compress + IndexedDB queue)
+Browser (PDF + IndexedDB queue)
   ↓
 FastAPI
-  ├ quality gate OpenCV
-  ├ perspective correction
-  └ layout crop
-  ↓
-Groq Vision
-  ├ header
-  ├ primary member table
-  └ secondary member table
+  ├ PyMuPDF: teks dan posisi sel
+  ├ profil blanko KK lanskap
+  └ thumbnail untuk review
   ↓
 Python deterministic row mapping + validation
   ↓
 Human review → APPROVED → XLSX SID
 ```
 
-Prinsip ekstraksi adalah **TRANSCRIBE ONLY**: jangan menebak karakter, jangan memindahkan nilai antarbaris, dan return null jika tidak terbaca. Primary dan secondary table digabung oleh Python berdasarkan nomor baris yang tercetak.
+Prinsip ekstraksi adalah **TRANSCRIBE ONLY**: jangan menebak karakter, jangan memindahkan nilai antarbaris, dan return null jika tidak terbaca. Dua tabel anggota digabung berdasarkan nomor baris yang tercetak; slot kosong diabaikan. Profil parser saat ini dikalibrasi untuk PDF KK siap cetak satu halaman lanskap. Susunan lain ditolak agar kolom tidak bergeser diam-diam.
 
 ## Fitur V1
 
 - Admin login berbasis environment variable dan session HTTP-only.
 - CSRF protection dan basic rate limiting.
-- Single/batch scan maksimal 20 foto, sequential.
-- Browser resize/compression dan IndexedDB queue.
-- Upload magic-byte/size validation.
-- OpenCV resolution, blur, brightness, contrast, glare checks.
-- Perspective correction dan proportional layout profile.
-- Groq multimodal extraction untuk header/primary/secondary secara terpisah.
+- Single/batch maksimal 20 PDF, sequential.
+- IndexedDB queue tanpa menyimpan PDF di server.
+- Validasi magic-byte, ukuran, satu halaman, PDF terkunci, dan teks selectable.
+- Ekstraksi native PyMuPDF berdasarkan objek teks dan koordinat tabel.
 - Deterministic row mapping tanpa shifting row.
-- Targeted verification untuk critical/unreadable field tanpa auto-overwrite.
+- Jalur Vision untuk foto dapat diaktifkan terpisah; PDF tidak memakai AI.
 - Database attempts, issues, corrections, records/members, export history.
 - Thumbnail only persisted; full KK image tidak disimpan permanen.
 - Manual edit dan approval ulang dengan deterministic validation.
@@ -65,6 +58,7 @@ APP_ADMIN_PASSWORD=<strong password>
 VISION_PROVIDER=groq
 VISION_MODEL=qwen/qwen3.8-27b
 GROQ_API_KEY=<server-side key>
+ENABLE_VISION_FALLBACK=false
 ```
 
 ## Render
@@ -93,8 +87,10 @@ Satu anggota = satu row. Household fields diulang. Export default paling berguna
 
 ## Privacy/security
 
-- `.env`, API key, KK asli, NIK, No KK, nama, alamat, raw image/base64, dan raw AI response tidak boleh masuk log/repository.
+- `.env`, API key, KK asli, NIK, No KK, nama, alamat, raw image/base64, dan raw AI response tidak boleh masuk log/repository. File PDF diabaikan oleh Git secara default.
 - Full-resolution KK tidak disimpan permanen.
+- PDF dibaca native dari objek teks dan koordinatnya; isi PDF tidak dikirim ke AI. Watermark gambar seperti `DRAFT` tidak menjadi input ekstraksi.
+- Jalur foto lama hanya aktif bila admin secara eksplisit mengatur `ENABLE_VISION_FALLBACK=true`.
 - Fixture test harus sintetis/fiktif.
 - Jangan integrasikan direct SID write pada V1.
 
@@ -105,6 +101,20 @@ pytest -q
 ```
 
 Unit tests mencakup deterministic row mismatch, invalid No KK, duplicate NIK, multiple Kepala Keluarga, low-resolution rejection, exact 28-column export, serta preservation No KK/NIK sebagai text.
+
+## Reset data scanner
+
+Skrip ini menghapus seluruh data operasional scanner dari database pada `DATABASE_URL` aktif: batch, KK, anggota, hasil scan, riwayat koreksi, dan riwayat ekspor. Struktur database dan kredensial environment tidak diubah. Jalankan pengecekan terlebih dahulu:
+
+```bash
+py -3.12 scripts/reset_kk_data.py --dry-run
+```
+
+Jika jumlahnya sudah benar dan siap dihapus permanen:
+
+```bash
+py -3.12 scripts/reset_kk_data.py --confirm DELETE_ALL_KK_DATA
+```
 
 ## V1 boundaries
 

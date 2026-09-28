@@ -1,1 +1,11 @@
-{% extends 'base.html' %}{% block content %}<header><div><small>DATABASE</small><h1>Data Scan</h1></div></header><section class="card"><div class="row"><input id="dataSearch" placeholder="Cari No KK / Kepala Keluarga"><select id="statusFilter"><option value="">Semua status</option><option>APPROVED</option><option>REVIEW_REQUIRED</option><option>EXTRACTED</option><option>FAILED</option></select></div><div id="dataTable"></div></section>{% endblock %}{% block scripts %}<script src="/static/js/data-page.js"></script>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<header><div><small>DATA</small><h1>Hasil Scan</h1><p>Cari, periksa, atau buka data untuk koreksi.</p></div><a class="btn primary" href="/exports">Excel Gabungan</a></header>
+<section class="card">
+  <div class="row data-controls"><input id="dataSearch" placeholder="Cari No. KK atau kepala keluarga"><select id="statusFilter"><option value="">Semua status</option><option value="EXTRACTED">Siap disetujui</option><option value="REVIEW_REQUIRED">Perlu review</option><option value="APPROVED">Approved</option><option value="FAILED">Gagal</option></select></div>
+  <p id="dataMeta" class="table-meta"></p>
+  <div id="dataTable"></div>
+  <div class="pagination"><button id="prevPage" type="button">Sebelumnya</button><button id="nextPage" type="button">Berikutnya</button></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/data-page.js"></script>{% endblock %}

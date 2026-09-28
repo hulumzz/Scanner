@@ -1,1 +1,11 @@
-{% extends 'base.html' %}{% block content %}<header><div><small>HISTORY</small><h1>Riwayat Batch</h1></div><a class="btn primary" href="/scan">＋ Scan KK</a></header><section class="card"><table><tr><th>Batch</th><th>Total</th><th>Approved</th><th>Review</th><th>Gagal</th><th></th></tr>{% for b in batches %}<tr><td>{{ b.batch_code }}</td><td>{{ b.items|length }}</td><td>{{ b.items|selectattr('status','equalto','APPROVED')|list|length }}</td><td>{{ b.items|selectattr('status','equalto','REVIEW_REQUIRED')|list|length }}</td><td>{{ b.items|selectattr('status','equalto','FAILED')|list|length }}</td><td><a href="/batches/{{ b.id }}">Detail →</a></td></tr>{% endfor %}</table></section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<header><div><small>HASIL</small><h1>Hasil KK</h1></div><a class="btn primary" href="/scan">Impor KK</a></header>
+<section class="batch-history">
+{% for b in batches %}
+  <a class="batch-history-item" href="/batches/{{ b.id }}"><div><small>{{ b.batch_code }}</small><h2>{{ b.items|length }} dokumen</h2></div><div class="batch-history-counts"><span>{{ b.items|selectattr('status','equalto','EXTRACTED')|list|length }} siap</span><span>{{ b.items|selectattr('status','equalto','REVIEW_REQUIRED')|list|length }} review</span><span>{{ b.items|selectattr('status','equalto','APPROVED')|list|length }} disetujui</span></div><b>Buka</b></a>
+{% else %}
+  <div class="empty-panel"><h2>Belum ada hasil</h2><a class="btn primary" href="/scan">Impor KK</a></div>
+{% endfor %}
+</section>
+{% endblock %}

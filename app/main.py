@@ -24,12 +24,15 @@ app.mount('/static',StaticFiles(directory='app/static'),name='static'); template
 _buckets=defaultdict(deque)
 @app.middleware('http')
 async def security(request:Request,call_next):
-    key=f"{request.client.host if request.client else 'unknown'}:{'login' if request.url.path=='/login' else 'api'}"; limit=settings.login_rate_limit_per_minute if request.url.path=='/login' else settings.api_rate_limit_per_minute; now=time.monotonic(); b=_buckets[key]
-    while b and b[0]<now-60: b.popleft()
-    if len(b)>=limit:
-        from starlette.responses import JSONResponse
-        return JSONResponse({'detail':'Terlalu banyak permintaan.'},status_code=429)
-    b.append(now); response=await call_next(request); response.headers['X-Content-Type-Options']='nosniff'; response.headers['X-Frame-Options']='DENY'; response.headers['Referrer-Policy']='same-origin'; return response
+    key=None; limit=None; client=request.client.host if request.client else 'unknown'
+    if request.url.path=='/login' and request.method=='POST': key=f'{client}:login'; limit=settings.login_rate_limit_per_minute
+    elif request.url.path.startswith('/api/') and request.method not in {'GET','HEAD','OPTIONS'}: key=f'{client}:api-write'; limit=settings.api_write_rate_limit_per_minute
+    if key:
+        now=time.monotonic(); b=_buckets[key]
+        while b and b[0]<now-60: b.popleft()
+        if len(b)>=limit: return JSONResponse({'detail':'Terlalu banyak permintaan.'},status_code=429)
+        b.append(now)
+    response=await call_next(request); response.headers['X-Content-Type-Options']='nosniff'; response.headers['X-Frame-Options']='DENY'; response.headers['Referrer-Policy']='same-origin'; return response
 for r in (auth.router,batches.router,scans.router,data.router,exports.router): app.include_router(r)
 def ctx(request,**extra): return {'csrf_token':ensure_csrf_token(request),'request':request,**extra}
 @app.get('/healthz')
@@ -44,7 +47,7 @@ def healthz():
 def root(request:Request): return RedirectResponse('/dashboard' if request.session.get('is_admin') else '/login',303)
 @app.get('/dashboard')
 def dashboard(request:Request,db:Session=Depends(get_db)):
-    require_admin(request); total=db.scalar(select(func.count()).select_from(ScanItem)) or 0; approved=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='APPROVED')) or 0; review=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='REVIEW_REQUIRED')) or 0; failed=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='FAILED')) or 0; population=db.scalar(select(func.count()).select_from(KKMember)) or 0; latest=db.scalars(select(ScanBatch).options(selectinload(ScanBatch.items)).order_by(ScanBatch.created_at.desc()).limit(8)).all(); return templates.TemplateResponse(request,'dashboard.html',ctx(request,stats={'total':total,'approved':approved,'population':population,'review':review,'failed':failed},batches=latest))
+    require_admin(request); total=db.scalar(select(func.count()).select_from(ScanItem)) or 0; approved=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='APPROVED')) or 0; extracted=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='EXTRACTED')) or 0; review=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='REVIEW_REQUIRED')) or 0; failed=db.scalar(select(func.count()).select_from(ScanItem).where(ScanItem.status=='FAILED')) or 0; population=db.scalar(select(func.count()).select_from(KKMember)) or 0; latest=db.scalars(select(ScanBatch).options(selectinload(ScanBatch.items)).order_by(ScanBatch.created_at.desc()).limit(8)).all(); return templates.TemplateResponse(request,'dashboard.html',ctx(request,stats={'total':total,'approved':approved,'extracted':extracted,'population':population,'review':review,'failed':failed},batches=latest))
 @app.get('/scan')
 def scan_page(request:Request): require_admin(request); return templates.TemplateResponse(request,'scan.html',ctx(request))
 @app.get('/batches')
@@ -60,6 +63,6 @@ def scan_detail(request:Request,item_id:str,db:Session=Depends(get_db)):
     if not i: raise HTTPException(404,'Scan tidak ditemukan.')
     return templates.TemplateResponse(request,'scan-detail.html',ctx(request,item=i))
 @app.get('/data')
-def data_page(request:Request): require_admin(request); return templates.TemplateResponse(request,'data.html',ctx(request))
+def data_page(request:Request): require_admin(request); return RedirectResponse('/batches',303)
 @app.get('/exports')
 def exports_page(request:Request,db:Session=Depends(get_db)): require_admin(request); return templates.TemplateResponse(request,'exports.html',ctx(request,exports=db.scalars(select(Export).order_by(Export.created_at.desc()).limit(100)).all()))

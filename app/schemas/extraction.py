@@ -35,6 +35,7 @@ class PrimaryRow(BaseModel):
 class SecondaryRow(BaseModel):
     model_config = ConfigDict(extra='ignore')
     row: int
+    status_perkawinan: str | None = None
     status_hubungan: str | None = None
     kewarganegaraan: str | None = None
     no_paspor: str | None = None

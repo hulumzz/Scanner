@@ -13,15 +13,19 @@ class Settings(BaseSettings):
     admin_password: str = Field('admin', alias='APP_ADMIN_PASSWORD')
     vision_provider: str = Field('groq', alias='VISION_PROVIDER')
     vision_model: str = Field('qwen/qwen3.8-27b', alias='VISION_MODEL')
+    enable_vision_fallback: bool = Field(False, alias='ENABLE_VISION_FALLBACK')
     groq_api_key: str | None = Field(None, alias='GROQ_API_KEY')
     gemini_api_key: str | None = Field(None, alias='GEMINI_API_KEY')
     ai_timeout_seconds: float = Field(45.0, alias='AI_TIMEOUT_SECONDS')
     max_upload_bytes: int = Field(4 * 1024 * 1024, alias='MAX_UPLOAD_BYTES')
+    max_pdf_upload_bytes: int = Field(8 * 1024 * 1024, alias='MAX_PDF_UPLOAD_BYTES')
+    max_pdf_pages: int = Field(1, alias='MAX_PDF_PAGES')
+    min_pdf_text_characters: int = Field(80, alias='MIN_PDF_TEXT_CHARACTERS')
     max_batch_items: int = Field(20, alias='MAX_BATCH_ITEMS')
     min_effective_width: int = Field(1600, alias='MIN_EFFECTIVE_WIDTH')
     thumbnail_long_edge: int = Field(360, alias='THUMBNAIL_LONG_EDGE')
     login_rate_limit_per_minute: int = 10
-    api_rate_limit_per_minute: int = 120
+    api_write_rate_limit_per_minute: int = Field(300, alias='API_WRITE_RATE_LIMIT_PER_MINUTE')
 
     @property
     def is_production(self) -> bool:

@@ -13,7 +13,17 @@ class ScannerError(Exception):
 
 ERROR_MESSAGES = {
     'FILE_TOO_LARGE': 'Ukuran file terlalu besar.',
-    'UNSUPPORTED_FORMAT': 'Format file tidak didukung. Gunakan JPG, PNG, atau WebP.',
+    'UNSUPPORTED_FORMAT': 'Format file tidak didukung. Gunakan PDF, JPG, PNG, atau WebP.',
+    'PDF_TOO_LARGE': 'Ukuran PDF terlalu besar.',
+    'PDF_INVALID': 'File PDF tidak valid atau rusak.',
+    'PDF_ENCRYPTED': 'PDF terkunci sandi dan tidak dapat diproses.',
+    'PDF_TOO_MANY_PAGES': 'PDF KK harus terdiri dari satu halaman.',
+    'PDF_NO_SELECTABLE_TEXT': 'PDF ini tidak memiliki teks yang dapat dipilih. Unggah PDF KK dengan teks selectable.',
+    'PDF_TABLE_UNREADABLE': 'Struktur tabel pada PDF tidak dapat dipetakan dengan aman. Periksa PDF atau lakukan entri manual.',
+    'DUPLICATE_DOCUMENT': 'Dokumen ini sudah pernah diunggah.',
+    'DUPLICATE_HOUSEHOLD': 'Nomor KK ini sudah ada pada hasil scan.',
+    'PROCESSING_FAILED': 'Pemrosesan dokumen gagal secara tak terduga. Silakan coba lagi.',
+    'VISION_FALLBACK_DISABLED': 'Pemrosesan foto dengan AI belum diaktifkan. Gunakan PDF KK dengan teks selectable.',
     'LOW_RESOLUTION': 'Resolusi foto terlalu rendah untuk dibaca dengan aman.',
     'BLUR': 'Foto terlalu buram. Ambil ulang foto dengan kamera stabil.',
     'DARK': 'Foto terlalu gelap. Ambil ulang di tempat yang lebih terang.',

@@ -15,8 +15,10 @@ from app.providers import get_vision_provider
 from app.schemas.extraction import HeaderExtraction, MergedMember
 from app.schemas.kk import KKUpdate, MemberUpdate
 from app.services.document_detector import rectify_document
+from app.services.dusun_service import canonical_dusun
 from app.services.extraction_service import extract_document
 from app.services.image_optimizer import decode_image
+from app.services.pdf_extraction_service import extract_pdf_document
 from app.services.quality_checker import inspect_quality
 from app.services.thumbnail_service import make_thumbnail
 from app.services.validation_service import validate_extraction
@@ -24,6 +26,7 @@ from app.services.verification_service import verify_critical_fields
 router=APIRouter(prefix='/api',tags=['scans'])
 def utcnow(): return datetime.now(timezone.utc)
 def _detect_mime(data):
+    if data.startswith(b'%PDF-'): return 'application/pdf'
     if data.startswith(b'\xff\xd8\xff'): return 'image/jpeg'
     if data.startswith(b'\x89PNG\r\n\x1a\n'): return 'image/png'
     if len(data)>=12 and data[:4]==b'RIFF' and data[8:12]==b'WEBP': return 'image/webp'
@@ -42,19 +45,45 @@ def _save(db,item,bundle,issues):
         x=KKMember(kk_record_id=r.id,**m.model_dump()); db.add(x); db.flush(); rowmap[m.no_urut_kk]=x.id
     for issue in issues: db.add(ScanIssue(scan_item_id=item.id,member_id=rowmap.get(issue.get('row')),severity=issue['severity'],code=issue['code'],field_name=issue.get('field_name'),message=issue['message']))
 
+def _existing_document(db, file_hash, item_id):
+    return db.scalar(select(ScanItem.id).where(ScanItem.file_hash == file_hash, ScanItem.id != item_id, ScanItem.status.in_(('EXTRACTED','REVIEW_REQUIRED','APPROVED'))).limit(1))
+
+def _existing_household(db, no_kk, item_id):
+    return db.scalar(select(ScanItem.id).join(ScanItem.kk_record).where(KKRecord.no_kk == no_kk, ScanItem.id != item_id, ScanItem.status.in_(('EXTRACTED','REVIEW_REQUIRED','APPROVED'))).limit(1))
+
 async def _process(item_id,file,db):
     settings=get_settings(); item=_load(db,item_id)
     if not item: raise HTTPException(404,'Scan item tidak ditemukan.')
-    data=await file.read(settings.max_upload_bytes+1)
-    if len(data)>settings.max_upload_bytes: raise HTTPException(413,ERROR_MESSAGES['FILE_TOO_LARGE'])
-    if not _detect_mime(data): raise HTTPException(415,ERROR_MESSAGES['UNSUPPORTED_FORMAT'])
-    attempt=ScanAttempt(scan_item_id=item.id,attempt_number=len(item.attempts)+1,provider=settings.vision_provider,model=settings.vision_model,status='PROCESSING'); db.add(attempt); db.flush(); item.current_attempt_id=attempt.id; item.status='PROCESSING'; item.file_hash=hash_file(data); item.optimized_size=len(data); db.commit(); started=time.perf_counter()
+    data=await file.read(max(settings.max_upload_bytes,settings.max_pdf_upload_bytes)+1)
+    mime_type=_detect_mime(data)
+    if not mime_type: raise HTTPException(415,ERROR_MESSAGES['UNSUPPORTED_FORMAT'])
+    max_bytes=settings.max_pdf_upload_bytes if mime_type=='application/pdf' else settings.max_upload_bytes
+    if len(data)>max_bytes:
+        code='PDF_TOO_LARGE' if mime_type=='application/pdf' else 'FILE_TOO_LARGE'
+        raise HTTPException(413,ERROR_MESSAGES[code])
+    file_digest=hash_file(data)
+    if _existing_document(db, file_digest, item.id):
+        item.file_hash=file_digest; item.original_size=len(data); item.optimized_size=len(data); item.status='FAILED'; item.failure_code='DUPLICATE_DOCUMENT'; item.failure_message=ERROR_MESSAGES['DUPLICATE_DOCUMENT']; db.commit(); return _serialize(_load(db,item.id))
+    provider_name='native_pdf' if mime_type=='application/pdf' else settings.vision_provider
+    model_name='pymupdf-kk-landscape-v2' if mime_type=='application/pdf' else settings.vision_model
+    attempt=ScanAttempt(scan_item_id=item.id,attempt_number=len(item.attempts)+1,provider=provider_name,model=model_name,status='PROCESSING'); db.add(attempt); db.flush(); item.current_attempt_id=attempt.id; item.status='PROCESSING'; item.file_hash=file_digest; item.original_size=len(data); item.optimized_size=len(data); db.commit(); started=time.perf_counter()
     try:
-        image=decode_image(data); h,w=image.shape[:2]; item.image_width=w; item.image_height=h; metrics=inspect_quality(image); rectified,det=rectify_document(image); metrics.update(det); item.quality_metrics=metrics; item.thumbnail_mime,item.thumbnail_data=make_thumbnail(rectified); provider=get_vision_provider(); bundle,mismatches,meta=await extract_document(rectified,provider); issues=validate_extraction(bundle.header,bundle.members,mismatches); verification=await verify_critical_fields(rectified,provider,issues)
-        if verification: meta['verification']=verification; issues.append({'code':'VERIFICATION_PERFORMED','message':'Pembacaan verifikasi dijalankan. Periksa hasil sebelum approval.','field_name':None,'severity':'WARNING','row':None})
-        _save(db,item,bundle,issues); item.status='REVIEW_REQUIRED' if issues else 'EXTRACTED'; attempt.status='SUCCESS'; attempt.extraction_snapshot=bundle.model_dump(mode='json'); attempt.provider_metadata=meta; attempt.completed_at=utcnow(); attempt.processing_ms=int((time.perf_counter()-started)*1000); db.commit(); safe_scan_log(scan_id=item.id,status=item.status,provider=settings.vision_provider,model=settings.vision_model,member_count=len(bundle.members),issue_count=len(issues),processing_ms=attempt.processing_ms); return _serialize(_load(db,item.id))
+        if mime_type=='application/pdf':
+            native=extract_pdf_document(data); bundle=native.bundle; mismatches=native.metadata.pop('row_mismatches',[]); meta=native.metadata; item.thumbnail_mime,item.thumbnail_data=native.thumbnail_mime,native.thumbnail_data; item.quality_metrics={'source_type':'native_pdf_text','word_count':meta['word_count'],'page_count':meta['page_count']}
+        else:
+            if not settings.enable_vision_fallback: raise ScannerError('VISION_FALLBACK_DISABLED','Vision fallback tidak diaktifkan.')
+            image=decode_image(data); h,w=image.shape[:2]; item.image_width=w; item.image_height=h; metrics=inspect_quality(image); rectified,det=rectify_document(image); metrics.update(det); item.quality_metrics=metrics; item.thumbnail_mime,item.thumbnail_data=make_thumbnail(rectified); provider=get_vision_provider(); bundle,mismatches,meta=await extract_document(rectified,provider); verification=await verify_critical_fields(rectified,provider,validate_extraction(bundle.header,bundle.members,mismatches))
+            if verification: meta['verification']=verification
+        bundle.header.dusun = canonical_dusun(bundle.header.alamat)
+        if _existing_household(db, bundle.header.no_kk, item.id):
+            raise ScannerError('DUPLICATE_HOUSEHOLD', ERROR_MESSAGES['DUPLICATE_HOUSEHOLD'])
+        issues=validate_extraction(bundle.header,bundle.members,mismatches)
+        if mime_type!='application/pdf' and meta.get('verification'): issues.append({'code':'VERIFICATION_PERFORMED','message':'Pembacaan verifikasi dijalankan. Periksa hasil sebelum approval.','field_name':None,'severity':'WARNING','row':None})
+        _save(db,item,bundle,issues); item.status='REVIEW_REQUIRED' if issues else 'EXTRACTED'; attempt.status='SUCCESS'; attempt.extraction_snapshot=bundle.model_dump(mode='json'); attempt.provider_metadata=meta; attempt.completed_at=utcnow(); attempt.processing_ms=int((time.perf_counter()-started)*1000); db.commit(); safe_scan_log(scan_id=item.id,status=item.status,provider=provider_name,model=model_name,member_count=len(bundle.members),issue_count=len(issues),processing_ms=attempt.processing_ms); db.expire_all(); return _serialize(_load(db,item.id))
     except ScannerError as exc:
         db.rollback(); item=_load(db,item_id); attempt=db.get(ScanAttempt,attempt.id); item.status='FAILED'; item.failure_code=exc.code; item.failure_message=ERROR_MESSAGES.get(exc.code,exc.message); attempt.status='FAILED'; attempt.failure_code=exc.code; attempt.completed_at=utcnow(); attempt.processing_ms=int((time.perf_counter()-started)*1000); db.commit(); return _serialize(_load(db,item.id))
+    except Exception:
+        db.rollback(); item=_load(db,item_id); attempt=db.get(ScanAttempt,attempt.id); item.status='FAILED'; item.failure_code='PROCESSING_FAILED'; item.failure_message=ERROR_MESSAGES['PROCESSING_FAILED']; attempt.status='FAILED'; attempt.failure_code='PROCESSING_FAILED'; attempt.completed_at=utcnow(); attempt.processing_ms=int((time.perf_counter()-started)*1000); db.commit(); safe_scan_log(scan_id=item.id,status='FAILED',provider=provider_name,model=model_name,processing_ms=attempt.processing_ms,failure_code='PROCESSING_FAILED'); return _serialize(_load(db,item.id))
 
 @router.post('/scan-items/{item_id}/process',dependencies=[Depends(csrf_required)])
 async def process_item(item_id:str,file:UploadFile=File(...),db:Session=Depends(get_db)): return await _process(item_id,file,db)
@@ -78,6 +107,7 @@ def update_kk(item_id:str,payload:KKUpdate,db:Session=Depends(get_db)):
     i=_load(db,item_id)
     if not i or not i.kk_record: raise HTTPException(404,'Data KK tidak ditemukan.')
     for f,v in payload.model_dump(exclude_unset=True).items(): _corr(db,i.id,None,f,getattr(i.kk_record,f),v); setattr(i.kk_record,f,v)
+    derived_dusun=canonical_dusun(i.kk_record.alamat); _corr(db,i.id,None,'dusun',i.kk_record.dusun,derived_dusun); i.kk_record.dusun=derived_dusun
     i.status='REVIEW_REQUIRED'; i.approved_at=None; db.commit(); return _serialize(_load(db,i.id))
 @router.patch('/members/{member_id}',dependencies=[Depends(csrf_required)])
 def update_member(member_id:str,payload:MemberUpdate,db:Session=Depends(get_db)):
