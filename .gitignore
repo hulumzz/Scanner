@@ -15,3 +15,8 @@ htmlcov/
 .env
 Blueprint Standalone KK Scanner V1.md
 *.[pP][dD][fF]
+
+# Windows desktop build artifacts
+build/
+dist/
+installer/output/
