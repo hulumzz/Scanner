@@ -1,7 +1,9 @@
 import hashlib
 import hmac
 import secrets
+
 from fastapi import HTTPException, Request, status
+
 from app.core.config import get_settings
 
 
@@ -25,6 +27,9 @@ def validate_csrf(request: Request, supplied: str | None) -> None:
 
 
 def require_admin(request: Request) -> None:
+    settings = get_settings()
+    if settings.is_desktop and settings.desktop_auto_login:
+        return
     if not request.session.get('is_admin'):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Autentikasi diperlukan.')
 
