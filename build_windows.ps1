@@ -1,1 +1,52 @@
-param(\n    [string]$Version = "1.0.0",\n    [switch]$SkipTests\n)\n\n$ErrorActionPreference = "Stop"\nSet-Location $PSScriptRoot\n\nWrite-Host "== KK Scanner Windows build =="\nWrite-Host "Version: $Version"\n\npython -m pip install --upgrade pip\npython -m pip install -r requirements-desktop.txt\n\nif (-not $SkipTests) {\n    python -m pytest -q\n}\n\nRemove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue\npython -m PyInstaller --clean --noconfirm Scanner.spec\n\nif (-not (Test-Path "dist\\KK Scanner\\KK Scanner.exe")) {\n    throw "PyInstaller selesai tetapi executable tidak ditemukan."\n}\n\n$iscc = $null\n$command = Get-Command ISCC.exe -ErrorAction SilentlyContinue\nif ($command) {\n    $iscc = $command.Source\n}\n\nif (-not $iscc) {\n    $candidates = @(\n        "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe",\n        "${env:ProgramFiles}\\Inno Setup 6\\ISCC.exe"\n    )\n    $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1\n}\n\nif (-not $iscc) {\n    throw "Inno Setup 6 tidak ditemukan. Install Inno Setup lalu jalankan kembali."\n}\n\nRemove-Item -Recurse -Force installer\\output -ErrorAction SilentlyContinue\n& $iscc "/DMyAppVersion=$Version" "installer\\Scanner.iss"\n\n$installer = Get-ChildItem "installer\\output\\KK-Scanner-Setup-*.exe" | Select-Object -First 1\nif (-not $installer) {\n    throw "Installer tidak ditemukan setelah kompilasi Inno Setup."\n}\n\nWrite-Host "Installer siap: $($installer.FullName)"\n
+param(
+    [string]$Version = "1.0.0",
+    [switch]$SkipTests
+)
+
+$ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
+
+Write-Host "== KK Scanner Windows build =="
+Write-Host "Version: $Version"
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements-desktop.txt
+
+if (-not $SkipTests) {
+    python -m pytest -q
+}
+
+Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+python -m PyInstaller --clean --noconfirm Scanner.spec
+
+if (-not (Test-Path "dist\KK Scanner\KK Scanner.exe")) {
+    throw "PyInstaller selesai tetapi executable tidak ditemukan."
+}
+
+$iscc = $null
+$command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+if ($command) {
+    $iscc = $command.Source
+}
+
+if (-not $iscc) {
+    $candidates = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+    )
+    $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
+if (-not $iscc) {
+    throw "Inno Setup 6 tidak ditemukan. Install Inno Setup lalu jalankan kembali."
+}
+
+Remove-Item -Recurse -Force installer\output -ErrorAction SilentlyContinue
+& $iscc "/DMyAppVersion=$Version" "installer\Scanner.iss"
+
+$installer = Get-ChildItem "installer\output\KK-Scanner-Setup-*.exe" | Select-Object -First 1
+if (-not $installer) {
+    throw "Installer tidak ditemukan setelah kompilasi Inno Setup."
+}
+
+Write-Host "Installer siap: $($installer.FullName)"
